@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>3D 冰晶玫瑰</title>
+    <style>
+        body { margin: 0; background-color: #000; overflow: hidden; font-family: 'Microsoft YaHei', sans-serif; user-select: none; }
+        canvas { display: block; position: fixed; top: 0; left: 0; z-index: 1; }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #ff69b4; text-align: center; z-index: 20; transition: opacity 0.8s ease;
+        }
+        .title { font-size: 1.2rem; text-shadow: 0 0 20px #ff69b4, 0 0 40px #ff1493; letter-spacing: 0.15em; margin-bottom: 10px; }
+        .hint { font-size: 0.8rem; color: #ffaacc; opacity: 0.7; }
+    </style>
+</head>
+<body>
+    <audio id="bgm" src="bgm.mp3" loop></audio>
+    <div id="loading">
+        <div class="title">🌹 正在同步浪漫轨道...</div>
+        <div class="hint">( 点击屏幕，开启浪漫 )</div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        document.body.appendChild(renderer.domElement);
+
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.15, 0.85);
+        composer.addPass(bloomPass);
+        composer.addPass(new OutputPass());
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const light = new THREE.PointLight(0xffaacc, 15);
+        light.position.set(4, 4, 6);
+        scene.add(light);
+
+        // --- 保持你的圆环参数不动 ---
+        const torusGeom = new THREE.TorusGeometry(0.09, 0.002, 16, 100);
+        const torusMat = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff, emissive: 0xffaacc, emissiveIntensity: 2.5,
+            metalness: 0.8, roughness: 0.1, transparent: true, opacity: 0.7
+        });
+        const torus = new THREE.Mesh(torusGeom, torusMat);
+        torus.rotation.x = Math.PI / 2;
+
+        // --- 蝴蝶定义 ---
+        const butterflies = new THREE.Group();
+        const bMat = new THREE.MeshPhysicalMaterial({ 
+            color: 0xff00ff, emissive: 0xff00ff, emissiveIntensity: 5, 
+            side: THREE.DoubleSide, transparent: true, opacity: 0.9 
+        });
+        const bfData = [];
+        for(let i=0; i<8; i++) {
+            const b = new THREE.Group();
+            
+            const leftWingG = new THREE.BufferGeometry();
+            leftWingG.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0,0,0, -0.04,0.06,0, -0.06,0,0]), 3));
+            const leftWing = new THREE.Mesh(leftWingG, bMat);
+            leftWing.name = "leftWing";
+
+            const rightWingG = new THREE.BufferGeometry();
+            rightWingG.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0,0,0, 0.04,0.06,0, 0.06,0,0]), 3));
+            const rightWing = new THREE.Mesh(rightWingG, bMat);
+            rightWing.name = "rightWing";
+
+            b.add(leftWing, rightWing);
+            
+            const theta = Math.random() * Math.PI * 2;
+            const radius = 0.2 + Math.random() * 0.1; 
+            b.position.set(Math.cos(theta)*radius, (Math.random()-0.5)*0.4, Math.sin(theta)*radius);
+            butterflies.add(b);
+            bfData.push({ theta, radius, offset: Math.random()*10, flapSpeed: 18 + Math.random()*7 });
+        }
+
+        const loader = new GLTFLoader();
+        let rose, step = 0;
+
+        loader.load('rose.glb', (gltf) => {
+            rose = gltf.scene;
+            rose.traverse((child) => {
+                if (child.isMesh) {
+                    child.geometry.center();
+                    child.material = new THREE.MeshPhysicalMaterial({
+                        color: 0xffffff, metalness: 0.25, roughness: 0.06,
+                        transmission: 0.8, thickness: 2, ior: 1.5,
+                        clearcoat: 1, transparent: true, opacity: 0.9
+                    });
+                }
+            });
+
+            rose.scale.set(55, 55, 55);
+            rose.position.set(0, 0, 0);
+            rose.rotation.z = -0.6;
+
+            rose.add(torus);
+            rose.add(butterflies); 
+            torus.position.set(0, 0, 0);
+
+            scene.add(rose);
+        });
+
+        const pCount = 500;
+        const pPos = new Float32Array(pCount * 3);
+        for (let i = 0; i < pCount * 3; i++) pPos[i] = (Math.random() - 0.5) * 30;
+        const pGeom = new THREE.BufferGeometry();
+        pGeom.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+        const pMat = new THREE.PointsMaterial({ color: 0xffb6c1, size: 0.05, transparent: true, opacity: 0.8 });
+        const particles = new THREE.Points(pGeom, pMat);
+        scene.add(particles);
+
+        camera.position.z = 8;
+
+        // --- 音乐控制与加载层消失逻辑 ---
+        const startExperience = () => {
+            const audio = document.getElementById('bgm');
+            if (audio) {
+                audio.volume = 0.5;
+                audio.play().catch(e => console.log("等待交互"));
+            }
+            const loadingEl = document.getElementById('loading');
+            if (loadingEl) {
+                loadingEl.style.opacity = '0';
+                setTimeout(() => { loadingEl.style.display = 'none'; }, 800);
+            }
+        };
+
+        window.addEventListener('click', startExperience, { once: true });
+        window.addEventListener('touchstart', startExperience, { once: true });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            step += 0.015;
+
+            if (rose) {
+                rose.rotation.y += 0.008;
+
+                const hue = (step * 0.05) % 1;
+                rose.traverse(c => {
+                    if (c.isMesh) {
+                        c.material.color.setHSL(hue, 0.6, 0.85);
+                        c.material.emissive.setHSL(hue, 0.5, 0.15);
+                    }
+                });
+
+                bfData.forEach((data, i) => {
+                    const b = butterflies.children[i];
+                    data.theta += 0.012; 
+                    b.position.x = Math.cos(data.theta) * data.radius;
+                    b.position.z = Math.sin(data.theta) * data.radius;
+                    b.position.y = Math.sin(step * 1.5 + data.offset) * 0.05;
+
+                    const leftWing = b.getObjectByName("leftWing");
+                    const rightWing = b.getObjectByName("rightWing");
+                    const flap = Math.sin(step * data.flapSpeed + data.offset) * 1.2;
+                    leftWing.rotation.y = flap;
+                    rightWing.rotation.y = -flap;
+                });
+
+                if (torus) {
+                    torus.rotation.y += 0.015;
+                }
+            }
+
+            particles.position.y -= 0.005;
+            if (particles.position.y < -15) particles.position.y = 15;
+
+            composer.render();
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
